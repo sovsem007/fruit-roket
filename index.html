@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Fruit Catcher Rocket</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" /> 
   <style>
     html,body{margin:0;padding:0;overflow:hidden;height:100%;background:#000;}
     #game{width:100%;height:100%;}
@@ -14,96 +14,130 @@
 <body>
   <div id="game"></div>
 <script>
-/*******************************************************************
-  Fruit Catcher Rocket  — HUD‑редакция
-  • медведь поднят на 140 px выше
-  • счёт и время 48 px, перед ними иконки монетки / часов
-  • под ними фон‑плашка PNG 300×200 (assets/hud_bg.png)
-*******************************************************************/
 
-const W = 480, H = 800;
-const GAME_DURATION = 60_000, FRUIT_INTERVAL = 900, FALL_SPEED = 160, SCORE_STEP = 100;
-let score = 0, remaining = 60;
+const GAME_WIDTH  = 480;
+const GAME_HEIGHT = 800;
+const GAME_DURATION   = 60_000; // 60 сек
+const FRUIT_INTERVAL  = 900;    // мс
+const FALL_SPEED      = 160;    // px/с
+const SCORE_PER_FRUIT = 100;
 
-const cfg = { type:Phaser.AUTO,parent:'game',width:W,height:H,backgroundColor:'#000',physics:{default:'arcade'},scene:{preload,create,update} };
+let score = 0;
+let remaining = 60;
 
-let rocket, fruits, scoreTxt, timerTxt, music, catchSound, pointerX;
+const config = {
+  type : Phaser.AUTO,
+  parent: 'game',
+  width : GAME_WIDTH,
+  height: GAME_HEIGHT,
+  backgroundColor:'#000',
+  physics:{ default:'arcade', arcade:{ debug:false } },
+  scene:{ preload, create, update }
+};
+
+let rocket, fruits, scoreText, timerText, music, catchSound, pointerX;
 
 function preload(){
-  this.load.image('bg','assets/space_bg.png');
-  this.load.image('rocket','assets/rocket.png');
-  this.load.image('apple','assets/apple.png');
-  this.load.image('banana','assets/banana.png');
-  this.load.image('cherry','assets/cherry.png');
-  this.load.image('coin','assets/coin.png');         // 32×32
-  this.load.image('hour','assets/hourglass.png');    // 32×32
-  this.load.image('hud','assets/hud_bg.png');        // 300×200
-  this.load.audio('bgm','assets/bgm.mp3');
-  this.load.audio('catch','assets/catch.mp3');
+  this.load.image('bg'    , 'assets/space_bg.png');
+  this.load.image('rocket', 'assets/rocket.png');
+  this.load.image('apple' , 'assets/apple.png');
+  this.load.image('banana', 'assets/banana.png');
+  this.load.image('cherry', 'assets/cherry.png');
+  this.load.audio('bgm'   , 'assets/bgm.mp3');
+  this.load.audio('catch' , 'assets/catch.mp3');
 }
 
 function create(){
-  this.add.image(W/2,H/2,'bg').setDisplaySize(W,H);
-  music = this.sound.add('bgm',{volume:0.3,loop:true}).play();
-  catchSound = this.sound.add('catch',{volume:0.6});
+  // фон
+  this.add.image(GAME_WIDTH/2,GAME_HEIGHT/2,'bg').setDisplaySize(GAME_WIDTH,GAME_HEIGHT);
 
-  // Ракета — подняли +140 px
-  rocket = this.physics.add.sprite(W/2, H - 280, 'rocket');
+  // звуки
+  music = this.sound.add('bgm',{ volume:0.3, loop:true });
+  music.play();
+  catchSound = this.sound.add('catch',{ volume:0.6 });
+
+  // ракета чуть выше низа, чтобы была видна полностью
+  rocket = this.physics.add.sprite(GAME_WIDTH/2, GAME_HEIGHT-140, 'rocket');
   rocket.setCollideWorldBounds(true);
 
+  // группа фруктов
   fruits = this.physics.add.group();
-  this.time.addEvent({delay:FRUIT_INTERVAL,loop:true,callback:spawnFruit,callbackScope:this});
+  this.time.addEvent({ delay:FRUIT_INTERVAL, loop:true, callback:spawnFruit, callbackScope:this });
+
+  // UI
+  const txtStyle = {
+    fontFamily:'Press Start 2P', fontSize:'26px', fill:'#ffff00', stroke:'#000', strokeThickness:6,
+    shadow:{ offsetX:2, offsetY:2, color:'#333', blur:2, fill:true }
+  };
+  scoreText = this.add.text(10,10,'Счёт: 0',txtStyle).setDepth(2);
+  timerText = this.add.text(10,50,'Время: 60',txtStyle).setDepth(2);
+
+  // пересечение
   this.physics.add.overlap(rocket,fruits,catchFruit,null,this);
 
-  // HUD‑плашка
-  const hud = this.add.image(150,100,'hud').setDepth(2); // top‑left чуть сдвигаем
-  hud.setOrigin(0,0); // позиция от левого‑верхнего
-
-  // иконки
-  this.add.image(170,130,'coin').setScale(1).setDepth(3).setOrigin(0,0.5);
-  this.add.image(170,190,'hour').setScale(1).setDepth(3).setOrigin(0,0.5);
-
-  // Текст
-  const style = { fontFamily:'Press Start 2P', fontSize:'48px', fill:'#ffffff', stroke:'#000', strokeThickness:8 };
-  scoreTxt = this.add.text(220,105,'0',style).setDepth(3).setOrigin(0,0);
-  timerTxt = this.add.text(220,165,'60',style).setDepth(3).setOrigin(0,0);
-
+  // таймер окончания
   this.time.delayedCall(GAME_DURATION,endGame,[],this);
+
+  // начальная цель X
   pointerX = rocket.x;
+
+  // сохраняем ссылку на сцену для рестарта
+  this.gameScene = this;
 }
 
 function spawnFruit(){
+  const x = Phaser.Math.Between(40,GAME_WIDTH-40);
   const key = Phaser.Utils.Array.GetRandom(['apple','banana','cherry']);
-  const half = this.textures.get(key).getSourceImage().width/2;
-  const x = Phaser.Math.Between(half, W-half);
-  fruits.create(x,-half,key).setVelocityY(FALL_SPEED);
+  const f = fruits.create(x,-40,key);
+  f.setVelocityY(FALL_SPEED);
 }
 
 function catchFruit(_,fruit){
   fruit.destroy();
-  score += SCORE_STEP;
-  scoreTxt.setText(String(score));
+  score += SCORE_PER_FRUIT;
+  scoreText.setText('Счёт: '+score);
   catchSound.play();
 }
 
 function endGame(){
-  this.physics.pause(); music.stop();
-  const overlay=this.add.rectangle(W/2,H/2,W,H,0x000,0.6).setDepth(4);
-  this.add.text(W/2,H/2,'Game Over',{fontFamily:'Press Start 2P',fontSize:'38px',fill:'#fff'}).setOrigin(0.5).setDepth(5);
-  this.add.text(W/2,H/2+60,'Score: '+score,{fontFamily:'Press Start 2P',fontSize:'32px',fill:'#ffff00'}).setOrigin(0.5).setDepth(5);
-  this.input.once('pointerdown',()=>this.scene.restart());
-  score = 0; remaining = 60;
+  // стоп физики и музыка
+  this.physics.pause();
+  music.stop();
+  // затемнение
+  const panel = this.add.rectangle(GAME_WIDTH/2,GAME_HEIGHT/2,380,260,0x000,0.7).setDepth(3);
+  const t1 = this.add.text(GAME_WIDTH/2,GAME_HEIGHT/2-50,'Игра окончена!',{
+    fontFamily:'Press Start 2P',fontSize:'30px',fill:'#ffffff',stroke:'#000',strokeThickness:6
+  }).setOrigin(0.5).setDepth(3);
+  const t2 = this.add.text(GAME_WIDTH/2,GAME_HEIGHT/2+10,Ваш счёт: ${score},{
+    fontFamily:'Press Start 2P',fontSize:'26px',fill:'#00ff00',stroke:'#000',strokeThickness:6
+  }).setOrigin(0.5).setDepth(3);
+  const btn = this.add.text(GAME_WIDTH/2,GAME_HEIGHT/2+90,'Играть снова',{fontFamily:'Press Start 2P',fontSize:'20px',fill:'#ffff00',stroke:'#000',strokeThickness:4})
+    .setOrigin(0.5).setDepth(3).setInteractive();
+  btn.once('pointerup', ()=> restartGame(this.gameScene));
+}
+
+function restartGame(scene){
+  // сбрасываем показатели и перезапускаем сцену
+  score = 0;
+  remaining = 60;
+  scene.scene.restart();
 }
 
 function update(){
-  const p=this.input.activePointer, half=rocket.displayWidth/2;
-  if(p.isDown) pointerX=Phaser.Math.Clamp(p.x,half,W-half);
-  rocket.x=Phaser.Math.Linear(rocket.x,pointerX,0.25);
-  const newRem=Math.max(0,Math.ceil((GAME_DURATION-this.time.now)/1000));
-  if(newRem!==remaining){ remaining=newRem; timerTxt.setText(String(remaining)); }
+  // Плавное управление: запоминаем цель X при нажатии, затем линейная интерполяция
+  const p = this.input.activePointer;
+  if(p.isDown){ pointerX = Phaser.Math.Clamp(p.x,40,GAME_WIDTH-40); }
+  rocket.x = Phaser.Math.Linear(rocket.x, pointerX, 0.25); // 0.25 = «инерция»
+
+  // таймер на экране (каждую секунду)
+  const newRemaining = Math.max(0, Math.ceil((GAME_DURATION - this.time.now) / 1000));
+  if(newRemaining !== remaining){
+    remaining = newRemaining;
+    timerText.setText('Время: '+remaining);
+  }
 }
 
-new Phaser.Game(cfg);
+new Phaser.Game(config);
 </script>
 </body>
 </html>
