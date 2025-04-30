@@ -2,27 +2,30 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>Fruit Catcher Rocket</title>
+  <title>Fruit Catcher Rocket</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <style>
-    html,body{margin:0;padding:0;background:#000;overflow:hidden;height:100%;}
+    html,body{margin:0;padding:0;overflow:hidden;height:100%;background:#000;}
     #game{width:100%;height:100%;}
+    /* Подключаем пиксельный шрифт Google как пример */
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   </style>
-  <!-- CDN‑версия Phaser 3 -->
+  <!-- Phaser 3 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.js"></script>
 </head>
 <body>
   <div id="game"></div>
 <script>
-/* ===========================
-   Fruit Catcher Rocket v1.0
-   =========================== */
+/* ===============================
+   Fruit Catcher Rocket v1.1
+   Улучшенная графика + музыка
+   =============================== */
 
 const GAME_WIDTH  = 480;
 const GAME_HEIGHT = 800;
-const GAME_DURATION = 60_000;   // длительность игры (мс)
-const FRUIT_INTERVAL = 900;     // частота появления фруктов (мс)
-const FALL_SPEED = 160;         // скорость падения фруктов (px/с)
+const GAME_DURATION   = 60_000; // 60 секунд
+const FRUIT_INTERVAL  = 900;    // мс
+const FALL_SPEED      = 160;    // px/с
 const SCORE_PER_FRUIT = 100;
 
 let score = 0;
@@ -30,72 +33,71 @@ let score = 0;
 const config = {
   type: Phaser.AUTO,
   parent: 'game',
-  width: GAME_WIDTH,
+  width : GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: '#000000',
   physics: {
     default: 'arcade',
-    arcade: {
-      debug: false
-    }
+    arcade : { debug:false }
   },
-  scene: {
-    preload, create, update
-  }
+  scene: { preload, create, update }
 };
 
-let rocket;
-let fruits;
-let scoreText;
-let timerText;
+let rocket, fruits, scoreText, timerText, music;
 let endScreenShown = false;
 
 function preload () {
-  // создаём текстуру ракеты простыми графическими примитивами
-  const g = this.add.graphics();
-  g.fillStyle(0xffffff, 1);
-  g.fillRect(10, 0, 20, 40);          // тело
-  g.fillTriangle(0, 40, 40, 40, 20, 60); // огонь
-  g.generateTexture('rocket', 40, 60);
-  g.destroy();
+  // фоны / спрайты / музыка (положите файлы в папку assets рядом с index.html)
+  this.load.image('bg'        , 'assets/space_bg.png');  // 480×800 или крупнее
+  this.load.image('rocket'    , 'assets/rocket.png');    // ~64×96 px, прозрачный фон
+  this.load.image('apple'     , 'assets/apple.png');
+  this.load.image('banana'    , 'assets/banana.png');
+  this.load.image('cherry'    , 'assets/cherry.png');
+  this.load.audio('bgm'       , 'assets/bgm.mp3');       // лёгкая фон. мелодия (0:30–1:00 loop)
 }
 
 function create () {
-  // положение ракеты снизу по центру
-  rocket = this.physics.add.sprite(GAME_WIDTH / 2, GAME_HEIGHT - 70, 'rocket');
+  // фон
+  this.add.image(GAME_WIDTH/2, GAME_HEIGHT/2, 'bg').setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+
+  // музыка
+  music = this.sound.add('bgm', { volume: 0.3, loop: true });
+  music.play();
+
+  // ракета
+  rocket = this.physics.add.sprite(GAME_WIDTH/2, GAME_HEIGHT-90, 'rocket');
   rocket.setCollideWorldBounds(true);
 
-  // группа фруктов
+  // группа фруктов
   fruits = this.physics.add.group();
 
-  // тексты UI
-  scoreText = this.add.text(10, 10, 'Счёт: 0', { font: '24px Arial', fill: '#ffffff' });
-  timerText = this.add.text(GAME_WIDTH - 10, 10, '', { font: '24px Arial', fill: '#ffffff' }).setOrigin(1, 0);
+  // UI-тексты с «объёмным» стилем
+  const textStyle = {
+    fontFamily: 'Press Start 2P, Arial',
+    fontSize  : '28px',
+    fill      : '#ffff00',
+    stroke    : '#000000',
+    strokeThickness: 6,
+    shadow: { offsetX:2, offsetY:2, color:'#333333', blur:2, stroke:false, fill:true }
+  };
+  scoreText = this.add.text(10, 10, 'Счёт: 0', textStyle).setDepth(2);
+  timerText = this.add.text(GAME_WIDTH-10,10,'', textStyle).setOrigin(1,0).setDepth(2);
 
-  // таймер появления фруктов
-  this.time.addEvent({ delay: FRUIT_INTERVAL, loop: true, callback: spawnFruit, callbackScope: this });
-
-  // коллизия ракеты и фруктов
+  // таймеры и коллизии
+  this.time.addEvent({ delay: FRUIT_INTERVAL, loop:true, callback: spawnFruit, callbackScope:this });
   this.physics.add.overlap(rocket, fruits, catchFruit, null, this);
-
-  // конец игры через GAME_DURATION мс
   this.time.delayedCall(GAME_DURATION, endGame, [], this);
 }
 
 function spawnFruit () {
-  const x = Phaser.Math.Between(20, GAME_WIDTH - 20);
-  const color = Phaser.Display.Color.RandomRGB();
-  const key = `fruit${Date.now()}`;
-  const g = this.add.graphics();
-  g.fillStyle(color.color, 1);
-  g.fillCircle(20, 20, 20);
-  g.generateTexture(key, 40, 40);
-  g.destroy();
-  const fruit = fruits.create(x, -20, key);
+  const x = Phaser.Math.Between(40, GAME_WIDTH-40);
+  const keys = ['apple','banana','cherry'];
+  const key  = Phaser.Utils.Array.GetRandom(keys);
+  const fruit = fruits.create(x, -40, key);
   fruit.setVelocityY(FALL_SPEED);
 }
 
-function catchFruit (rocket, fruit) {
+function catchFruit (_, fruit) {
   fruit.destroy();
   score += SCORE_PER_FRUIT;
   scoreText.setText('Счёт: ' + score);
@@ -104,25 +106,29 @@ function catchFruit (rocket, fruit) {
 function endGame () {
   if (endScreenShown) return;
   endScreenShown = true;
-  // остановить физику и таймеры
   this.physics.pause();
   this.scene.pause();
-  // показ финального окна
-  const bg = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, 360, 240, 0x000000, 0.8);
-  const txt = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 40, 'Игра окончена!', { font: '32px Arial', fill: '#ffffff' }).setOrigin(0.5);
-  const final = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 20, `Ваш счёт: ${score}`, { font: '28px Arial', fill: '#ffff00' }).setOrigin(0.5);
-  const reload = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 80, 'Нажмите для повтора', { font: '20px Arial', fill: '#00ff00' }).setOrigin(0.5).setInteractive();
-  reload.once('pointerup', () => location.reload());
+  music.stop();
+
+  const bgBox = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, 380, 260, 0x000000, 0.8).setDepth(3);
+  const t1 = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2-50, 'Игра окончена!', {
+    fontFamily:'Press Start 2P, Arial', fontSize:'32px', fill:'#ffffff', stroke:'#000', strokeThickness:6
+  }).setOrigin(0.5).setDepth(3);
+  const t2 = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2+10, `Ваш счёт: ${score}`, {
+    fontFamily:'Press Start 2P, Arial', fontSize:'28px', fill:'#00ff00', stroke:'#000', strokeThickness:6
+  }).setOrigin(0.5).setDepth(3);
+  const btn = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2+90, 'Нажмите для повтора', {
+    fontFamily:'Press Start 2P, Arial', fontSize:'20px', fill:'#ffff00', stroke:'#000', strokeThickness:4
+  }).setOrigin(0.5).setDepth(3).setInteractive();
+  btn.once('pointerup', () => location.reload());
 }
 
-function update (time, delta) {
-  // движение ракеты пальцем/мышью
+function update () {
   const pointer = this.input.activePointer;
   if (pointer.isDown) {
-    rocket.x = Phaser.Math.Clamp(pointer.x, 20, GAME_WIDTH - 20);
+    rocket.x = Phaser.Math.Clamp(pointer.x, 40, GAME_WIDTH-40);
   }
-  // обновляем обратный счёт
-  const remaining = Math.max(0, Math.ceil((GAME_DURATION - time) / 1000));
+  const remaining = Math.max(0, Math.ceil((GAME_DURATION - this.time.now) / 1000));
   timerText.setText('Время: ' + remaining);
 }
 
